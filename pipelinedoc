@@ -16,4 +16,18 @@ mvn clean verify sonar:sonar \
   -Dsonar.login=sqp_db13a3c91ba238a07ec4b92d0ec423133b279624
 tomcat download
  wget https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.115/bin/apache-tomcat-9.0.115.tar.gz
+in tomcat
+catalina_home/webapps/manager/META-INF---context.xml
+  <!--  <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor"
+                   sameSiteCookies="strict" />
+  <Valve className="org.apache.catalina.valves.RemoteCIDRValve"
+        allow="127.0.0.0/8,::1/128" /> -->
+
+
+
+
+
+
+
+
 
