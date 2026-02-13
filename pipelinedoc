@@ -40,7 +40,8 @@ gdown 1478uAbOJ_iBD_T3TUksfHFILVeQTprmH
 After download, extrac jboss
 create a user /opt/jboss-eap-8.1/bin>./add-user.sh
 start jboss in standalone mode
-./standalone.sh -c standalone-ha.xml -Djboss.socket.binding.port-offset=200
+hostname -i
+./standalone.sh -c standalone-ha.xml -Djboss.socket.binding.port-offset=200 -Djboss.bind.address.management=172.31.16.226 -b 172.31.16.226 &
 
 
 
