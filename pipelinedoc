@@ -43,6 +43,437 @@ start jboss in standalone mode
 hostname -i
 ./standalone.sh -c standalone-ha.xml -Djboss.socket.binding.port-offset=200 -Djboss.bind.address.management=172.31.16.226 -b 172.31.16.226 &
 
+pipeline {
+    agent any
+
+    stages {
+
+        stage('Fetch Git Repo') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/krishnadekrin/krishnabank.git'
+            }
+        }
+
+        stage('Build + Sonar Integration and Test') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh """
+                        mvn clean package sonar:sonar \
+                        -Dsonar.projectKey=cicdproject2
+                    """
+                }
+            }
+        }
+
+        stage('Quality Gate Check') {
+            steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Verify WAR File') {
+            steps {
+                sh 'ls -l target/'
+                sh 'find target -name "*.war"'
+            }
+        }
+
+        stage('Archive Artifact') {
+            steps {
+                archiveArtifacts artifacts: 'target/*.war', fingerprint: true
+                sh 'cp target/*.war /tmp'
+            }
+        }
+
+        stage('Tomcat Deployment') {
+            steps {
+                deploy adapters: [
+                    tomcat9(
+                        alternativeDeploymentContext: '',
+                        credentialsId: '2a8dc60f-e3bf-424c-b2bc-68819e5b1583',
+                        path: '',
+                        url: 'http://3.6.152.198:9090/'
+                    )
+                ],
+                contextPath: 'krishnabank',
+                war: '**/*.war'
+            }
+        }
+
+      stage('JBoss Deployment') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'jboss-admin',
+            usernameVariable: 'JBOSS_USER',
+            passwordVariable: 'JBOSS_PASS'
+        )]) {
+            sh """
+            /opt/jboss-eap-8.1/bin/jboss-cli.sh \
+            --connect \
+            --controller=172.31.16.226:10190 \
+            --user=$JBOSS_USER \
+            --password='$JBOSS_PASS' \
+            --command="deploy target/krishnabank.war --force"
+            """
+        }
+    }
+}
+
+        stage('Health Check in Tomcat') {
+            steps {
+                sh 'curl -I http://3.6.152.198:9090/krishnabank || true'
+            }
+        }
+
+        stage('Health Check in JBoss') {
+            steps {
+                sh 'curl -I http://3.6.152.198:8280/krishnabank || true'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment Successful'
+        }
+        failure {
+            echo 'Pipeline Failed'
+        }
+    }
+}
+
+
+
+[root@cicdserver2 jboss-eap-8.1]# cd ..
+[root@cicdserver2 opt]# ls
+apache-tomcat-9.0.115         jboss-eap-8.1            sonarqube-9.9.4.87374
+apache-tomcat-9.0.115.tar.gz  jboss-eap-8.1.0-dev.zip  sonarqube-9.9.4.87374.zip
+aws                           krishnabank
+[root@cicdserver2 opt]# cd krishnabank/
+[root@cicdserver2 krishnabank]# ls
+pom.xml  src
+[root@cicdserver2 krishnabank]# git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+[root@cicdserver2 krishnabank]# ls
+pom.xml  src
+[root@cicdserver2 krishnabank]# cd src/
+[root@cicdserver2 src]# ls
+main
+[root@cicdserver2 src]# cd main/
+[root@cicdserver2 main]# ls
+java  webapp
+[root@cicdserver2 main]# cd webapp/
+[root@cicdserver2 webapp]# ls
+WEB-INF  index.jsp
+[root@cicdserver2 webapp]# vim index.jsp
+[root@cicdserver2 webapp]# git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   index.jsp
+
+no changes added to commit (use "git add" and/or "git commit -a")
+[root@cicdserver2 webapp]# git add .
+[root@cicdserver2 webapp]# git commit -m "updated to saving" index.jsp
+Author identity unknown
+
+*** Please tell me who you are.
+
+Run
+
+  git config --global user.email "you@example.com"
+  git config --global user.name "Your Name"
+
+to set your account's default identity.
+Omit --global to set the identity only in this repository.
+
+fatal: unable to auto-detect email address (got 'root@cicdserver2.(none)')
+[root@cicdserver2 webapp]# git config --global user.email "kmcrazybng@gmail.com"
+[root@cicdserver2 webapp]#  git config --global user.name "krishna"
+[root@cicdserver2 webapp]# git commit -m "updated to saving" index.jsp
+[main d9d649a] updated to saving
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[root@cicdserver2 webapp]# git remote -v
+origin  https://github.com/krishnadekrin/krishnabank.git (fetch)
+origin  https://github.com/krishnadekrin/krishnabank.git (push)
+[root@cicdserver2 webapp]# git branch
+* main
+[root@cicdserver2 webapp]# git push -u origin
+Username for 'https://github.com': krishnadekrin
+Password for 'https://krishnadekrin@github.com':
+Enumerating objects: 11, done.
+Counting objects: 100% (11/11), done.
+Delta compression using up to 2 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (6/6), 505 bytes | 505.00 KiB/s, done.
+Total 6 (delta 1), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (1/1), completed with 1 local object.
+To https://github.com/krishnadekrin/krishnabank.git
+   2122062..d9d649a  main -> main
+branch 'main' set up to track 'origin/main'.
+[root@cicdserver2 webapp]# 04:11:00,098 INFO  [org.jboss.as.repository] (management-handler-thread - 1) WFLYDR0001: Content added at location /opt/jboss-eap-8.1/standalone/data/content/5e/0746d9df14fc01cade0a5911f44a5ade32f779/content
+04:11:00,107 INFO  [org.wildfly.extension.undertow] (ServerService Thread Pool -- 87) WFLYUT0022: Unregistered web context: '/krishnabank' from server 'default-server'
+04:11:00,141 INFO  [org.jboss.as.server.deployment] (MSC service thread 1-2) WFLYSRV0028: Stopped deployment krishnabank.war (runtime-name: krishnabank.war) in 39ms
+04:11:00,153 INFO  [org.jboss.as.server.deployment] (MSC service thread 1-3) WFLYSRV0027: Starting deployment of "krishnabank.war" (runtime-name: "krishnabank.war")
+04:11:00,387 INFO  [org.wildfly.extension.undertow] (ServerService Thread Pool -- 88) WFLYUT0021: Registered web context: '/krishnabank' for server 'default-server'
+04:11:00,406 INFO  [org.jboss.as.server] (management-handler-thread - 1) WFLYSRV0016: Replaced deployment "krishnabank.war" with deployment "krishnabank.war"
+04:11:00,408 INFO  [org.jboss.as.repository] (management-handler-thread - 1) WFLYDR0002: Content removed from location /opt/jboss-eap-8.1/standalone/data/content/de/69a0f1fd123db9a44946ee9388f5ad30ee5475/content
+
+[root@cicdserver2 webapp]# ls
+WEB-INF  index.jsp
+[root@cicdserver2 webapp]# cat index.jsp
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+<!DOCTYPE html>
+<html>
+<head>
+
+        <title>Krishna Bank - Home check44webhooktest11</title>
+
+    <title>Krishna Bank - Home check44webhooktest11</title>
+</head>
+<body>
+<h1>Krishna Bank update saving account details</h1>
+<h4>updated in the github to check webhook, Middleware is too easy when compare to all this tools. But nothing is there in this tools.
+        We need to procatice--------------------</h4>
+<p>This is a sample Java 8 web application deployed on Tomcat using Maven.</p>
+
+<ul>
+    <li><a href="welcome Krishna">View Sample Account krishna Details check automatic build is working or not</a></li>
+</ul>
+
+</body>
+</html>
+
+
+
+
+
+[root@cicdserver2 webapp]#
+[root@cicdserver2 webapp]#
+[root@cicdserver2 webapp]# vim index.jsp
+[root@cicdserver2 webapp]# git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   index.jsp
+
+no changes added to commit (use "git add" and/or "git commit -a")
+[root@cicdserver2 webapp]# git add .
+[root@cicdserver2 webapp]# git commit -m "update colors" index.jsp
+[main 0b02f01] update colors
+ 1 file changed, 110 insertions(+), 11 deletions(-)
+[root@cicdserver2 webapp]# git push -u origin
+Username for 'https://github.com': krishnadekrin
+Password for 'https://krishnadekrin@github.com':
+remote: Invalid username or token. Password authentication is not supported for Git operations.
+fatal: Authentication failed for 'https://github.com/krishnadekrin/krishnabank.git/'
+[root@cicdserver2 webapp]# git push -u origin
+Username for 'https://github.com': krishnadekrin
+Password for 'https://krishnadekrin@github.com':
+Enumerating objects: 11, done.
+Counting objects: 100% (11/11), done.
+Delta compression using up to 2 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (6/6), 1.52 KiB | 1.52 MiB/s, done.
+Total 6 (delta 0), reused 0 (delta 0), pack-reused 0 (from 0)
+To https://github.com/krishnadekrin/krishnabank.git
+   d9d649a..0b02f01  main -> main
+branch 'main' set up to track 'origin/main'.
+[root@cicdserver2 webapp]# git remote -v
+origin  https://github.com/krishnadekrin/krishnabank.git (fetch)
+origin  https://github.com/krishnadekrin/krishnabank.git (push)
+[root@cicdserver2 webapp]# 04:17:05,705 INFO  [org.jboss.as.repository] (management-handler-thread - 1) WFLYDR0001: Content added at location /opt/jboss-eap-8.1/standalone/data/content/9a/ee08c282d24a00c5899072f77c4e96c371a884/content
+04:17:05,708 INFO  [org.wildfly.extension.undertow] (ServerService Thread Pool -- 90) WFLYUT0022: Unregistered web context: '/krishnabank' from server 'default-server'
+04:17:05,713 INFO  [org.jboss.as.server.deployment] (MSC service thread 1-4) WFLYSRV0028: Stopped deployment krishnabank.war (runtime-name: krishnabank.war) in 6ms
+04:17:05,714 INFO  [org.jboss.as.server.deployment] (MSC service thread 1-4) WFLYSRV0027: Starting deployment of "krishnabank.war" (runtime-name: "krishnabank.war")
+04:17:05,831 INFO  [org.wildfly.extension.undertow] (ServerService Thread Pool -- 90) WFLYUT0021: Registered web context: '/krishnabank' for server 'default-server'
+04:17:05,849 INFO  [org.jboss.as.server] (management-handler-thread - 1) WFLYSRV0016: Replaced deployment "krishnabank.war" with deployment "krishnabank.war"
+04:17:05,849 INFO  [org.jboss.as.repository] (management-handler-thread - 1) WFLYDR0002: Content removed from location /opt/jboss-eap-8.1/standalone/data/content/5e/0746d9df14fc01cade0a5911f44a5ade32f779/content
+
+[root@cicdserver2 webapp]# history
+    1  wget https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.115/bin/apache-tomcat-9.0.115.tar.gz
+    2  ls
+    3  wget https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.115/bin/apache-tomcat-9.0.115.tar.gzclear
+    4  clear
+    5  ls
+    6  tar -zxvf apache-tomcat-9.0.115.tar.gz
+    7  clear
+    8  ls
+    9  ll
+   10  cd apache-tomcat-9.0.115/
+   11  clear
+   12  ls
+   13  cd webapps/
+   14  ls
+   15  pwd
+   16  cd manager/
+   17  ls
+   18  cd META-INF/
+   19  ls
+   20  clear
+   21  pwd
+   22  ls
+   23  vim context.xml
+   24  pwd
+   25  cd ..
+   26  cd ..
+   27  cd ..
+   28  ls
+   29  pwd
+   30  clear
+   31  ls
+   32  cd conf/
+   33  ls
+   34  vim tomcat-users.xml
+   35  clear
+   36  clear
+   37  ls
+   38  vim server.xml
+   39  cd ..
+   40  cd bin
+   41  clear
+   42  ls
+   43  ./startup.sh
+   44  ps -ef | grep java
+   45  cd ..
+   46  cd ..
+   47  clear
+   48  ls
+   49  wget https://developers.redhat.com/content-gateway/file/eap/8.1/jboss-eap-8.1.0-dev.zip
+   50  ls
+   51  unzip jboss-eap-8.1.0-dev.zip
+   52  ls
+   53  wget https://developers.redhat.com/content-gateway/file/eap/8.0.0/jboss-eap-8.0.0.zip
+   54  ls
+   55  unzip jboss-eap-8.0.0.zip
+   56  clear
+   57  ls
+   58  rm -rf jboss-eap-8.0.0.zip
+   59  rm -rf jboss-eap-8.1.0-dev.zip
+   60  clear
+   61  ls
+   62  wget "https://drive.google.com/uc?export=download&id=1478uAbOJ_iBD_T3TUksfHFILVeQTprmH" -O filename
+   63  ls
+   64  ls -lrt
+   65  rm -rf filename
+   66  clear
+   67  wget "https://drive.google.com/uc?export=download&id=1478uAbOJ_iBD_T3TUksfHFILVeQTprmH" -O filename
+   68  wget "https://drive.google.com/uc?export=download&id=1478uAbOJ_iBD_T3TUksfHFILVeQTprmH" -O jboss-8.1.zip
+   69  ls
+   70  unzip jboss-8.1.zip
+   71  clear
+   72  ls
+   73  rm -rf jboss-8.1.zip
+   74  pip install gdown
+   75  dnf install python3-pip -y
+   76  pip3 install gdown
+   77  gdown 1478uAbOJ_iBD_T3TUksfHFILVeQTprmH
+   78  ls
+   79  unzip jboss-eap-8.1.0-dev.zip
+   80  ls
+   81  cd jboss-eap-8.1/
+   82  ls
+   83  clear
+   84  ls
+   85  cd bin
+   86  ./add-user.sh
+   87  clear
+   88  ./standalone.sh -c standalone-ha.xml -Djboss.socket.binding.port-offset=200 &
+   89  pwd
+   90  fg
+   91  clear
+   92  hostname -i
+   93  ./standalone.sh -c standalone-ha.xml -Djboss.socket.binding.port-offset=200 -Djboss.bind.address.management=172.31.16.226 -b 172.31.16.226 &
+   94  clear
+   95  pwd
+   96  cd ..
+   97  cd ..
+   98  pwd
+   99  df -h
+  100  mount -o remount,size=3G /tmp
+  101  ll
+  102  df -h
+  103  systemctl start jenkins.service
+  104  clear
+  105  cat /var/lib/jenkins/secrets/initialAdminPassword
+  106  pwd
+  107  ;s
+  108  ls
+  109  cd jboss-eap-8.1/
+  110  ls
+  111  pwd
+  112  clear
+  113  pwd
+  114  cd ..
+  115  git clone
+  116  git clone https://github.com/krishnadekrin/krishnabank.git
+  117  ls
+  118  cd krishnabank/
+  119  clear
+  120  s
+  121  ls
+  122  cd /opt
+  123  ls
+  124  cd jboss-eap-8.1/
+  125  ls
+  126  cd bin
+  127  pwd
+  128  java -fullversion
+  129  cd ..
+  130  clear
+  131  pwd
+  132  ls
+  133  hostname -i
+  134  clear
+  135  clear
+  136  cd ..
+  137  ls
+  138  cd krishnabank/
+  139  ls
+  140  git status
+  141  ls
+  142  cd src/
+  143  ls
+  144  cd main/
+  145  ls
+  146  cd webapp/
+  147  ls
+  148  vim index.jsp
+  149  git status
+  150  git add .
+  151  git commit -m "updated to saving" index.jsp
+  152  git config --global user.email "kmcrazybng@gmail.com"
+  153   git config --global user.name "krishna"
+  154  git commit -m "updated to saving" index.jsp
+  155  git remote -v
+  156  git branch
+  157  git push -u origin
+  158  ls
+  159  cat index.jsp
+  160  vim index.jsp
+  161  git status
+  162  git add .
+  163  git commit -m "update colors" index.jsp
+  164  git push -u origin
+  165  git push -u origin
+  166  git remote -v
+  167  history
+[root@cicdserver2 webapp]#
+[root@cicdserver2 webapp]#
+[root@cicdserver2 webapp]# h
+
 
 
 
