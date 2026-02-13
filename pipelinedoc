@@ -1,0 +1,19 @@
+EC2--8 gb, 25gb -- amazon Linux
+created and allocated elastic ip --	
+3.6.152.198
+installed git
+installed maven
+installed Jenkins
+installed SonarQube
+create a project
+in soraqube
+
+projectkey -  cicdproject2
+sqp_db13a3c91ba238a07ec4b92d0ec423133b279624
+mvn clean verify sonar:sonar \
+  -Dsonar.projectKey=cicdproject2 \
+  -Dsonar.host.url=http://3.6.152.198:9000 \
+  -Dsonar.login=sqp_db13a3c91ba238a07ec4b92d0ec423133b279624
+tomcat download
+ wget https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.115/bin/apache-tomcat-9.0.115.tar.gz
+
